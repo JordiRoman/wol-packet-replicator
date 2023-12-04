@@ -21,25 +21,21 @@ TARGET_ADDRESS = "255.255.255.255"
 TARGET_PORT = 9
 
 FORCED_AUTH_HOSTS = {}
+# Password to send on forward packets
 FORWARD_PASS=""
+# Password to check on received packets
+GLOBAL_PASS=""
 
 def is_allowed(address, password):
     if address in FORCED_AUTH_HOSTS:
         logger.debug("Enforcing authentication for {} : {} <-> {}". format(address, FORCED_AUTH_HOSTS[address], password) )
         return password == FORCED_AUTH_HOSTS[address]
+    elif GLOBAL_PASS != "":
+        logger.debug("Enforcing Global authentication for {} : {} <-> {}". format(address, GLOBAL_PASS, password) )
+        return password == GLOBAL_PASS
     return True
 
-
 def forward_packet(data):
-
-    if ( FORWARD_PASS != "" ):
-        payload = binascii.hexlify(data).decode('utf-8')
-        rSearch = DGRAM_REGEX.search(payload)
-        payload = rSearch.group(1) + rSearch.group(2) + FORWARD_PASS
-        logger.debug( "New payload     : {}".format(payload) )
-        data = binascii.unhexlify( payload )
-    #
-
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.connect((TARGET_ADDRESS, TARGET_PORT))
@@ -58,6 +54,11 @@ def handle_packet(data):
 
         if is_allowed(address, password):
             logger.debug("Forwarding the packet for %s to %s:%s" % (address, TARGET_ADDRESS, TARGET_PORT))
+            if ( FORWARD_PASS != "" ):
+                newPayload = search.group(1) + search.group(2) + FORWARD_PASS
+                logger.debug( "New payload     : {}".format(payload) )
+                data = binascii.unhexlify( newPayload )
+            #
             forward_packet(data)
         else:
             logger.debug("This request has been denied because the received password is not correct")
@@ -82,15 +83,17 @@ def show_help( error=0 ):
     print( 
         "replicator", 
         "Forma de uso:",
-        "    {} [-h] [-i ip] [-p port] [-t ip] [-r port] [-s password] [-f mac_and_passwd_json_file] [-l log file]".format( __file__ ),
+        "    {} [-h] [-i ip] [-p port] [-t ip] [-r port] [-s password] [-z password] [-f mac_and_passwd_json_file] [-l log file]".format( __file__ ),
         "",
-        "   -h show this help",
-        "   -i binding ip. Default {}".format(BIND_ADDRESS),
-        "   -p binding port. Default {}".format(BIND_PORT),
-        "   -t target ip. Default {}".format(TARGET_ADDRESS) ,
-        "   -r target port. Default {}".format(TARGET_PORT),
-        "   -f json file with mac's and passwords",
-        "   -s password for use on forward packet",
+        "   -h show this help.",
+        "   -i binding ip. Default {}.".format(BIND_ADDRESS),
+        "   -p binding port. Default {}.".format(BIND_PORT),
+        "   -t target ip. Default {}.".format(TARGET_ADDRESS) ,
+        "   -r target port. Default {}.".format(TARGET_PORT),
+        "   -f json file with mac's and passwords. View format down.",
+        "   -s password for use on forward packet. Default ''.",
+        "   -z password to test on received packets. Default ''.",
+        "",
         "json format file:",
         "",
         "[",
@@ -105,7 +108,14 @@ def show_help( error=0 ):
         "     {} -h ".format( __file__ ),
         "     {} -i 192.168.1.100".format( __file__ ),
         "     {} -p 8000".format( __file__ ),
+        "     {} -t 192.168.1.100".format( __file__ ),
+        "     {} -r 8000".format( __file__ ),
+        "     {} -s 112233445566".format( __file__ ),
         "     {} -f /etc/wol/mac_and_pass.json".format( __file__ ),
+        "     {} -z aabbccddeeff".format(__file__ ),
+        "     {} -l /var/log/wol_replicator.log".format( __file__ ),
+        "     LOGLEVEL=DEBUG {}".format(__file__),
+        "",
         sep = "\n"
         )
     sys.exit( error )
@@ -163,7 +173,6 @@ if __name__ == '__main__':
     consoleHandler.setFormatter(logFormatter)
     logger.addHandler(consoleHandler)
 
-
     try:
         opts, args = getopt.getopt(sys.argv[1:],'hi:p:f:l:s:t:r:')
     except getopt.GetoptError:
@@ -193,7 +202,6 @@ if __name__ == '__main__':
             logger.debug( "New TARGET Port:{}".format( TARGET_PORT ))
 
         elif opt == '-s':
-            
             if ETHER_REGEX.match(arg):
                 FORWARD_PASS = arg
                 logger.debug( "FORWARD_PASS: '{}' like ethernet 'aabbccddeeff' ".format(arg))
@@ -222,6 +230,14 @@ if __name__ == '__main__':
 
             FORCED_AUTH_HOSTS = json_validation ( json_content )
 
+        elif opt == '-z':
+            if ETHER_REGEX.match(arg):
+                GLOBAL_PASS = arg
+                logger.debug( "GLOBAL_PASS: '{}' like ethernet 'aabbccddeeff' ".format(arg))
+            else:
+                logger.critical( "Invalid GLOBAL_PASS: '{}', ethernet like needed 'aabbccddeeff' ".format(arg))
+                sys.exit (1)
+            #
         elif opt == "-l":
             LOG_FILE = arg
             logger.debug( "Log File:{}".format( LOG_FILE ))
